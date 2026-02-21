@@ -1,0 +1,17 @@
+services:
+  generador-mensajes:
+    build: .
+    ports:
+      - "8006:8000"
+    environment:
+      DB_HOST: db
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASS: postgres
+    networks:
+      - dashboard_default
+    restart: unless-stopped
+
+networks:
+  dashboard_default:
+    external: true
