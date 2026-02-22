@@ -3,8 +3,11 @@ import uuid
 from datetime import date
 from typing import Optional, Tuple
 
-from app.data.greetings import GREETINGS
-from app.data.templates import TEMPLATES, AGE_GROUP_PROPOSAL_PRIORITIES, CLOSINGS
+from app.data.greetings import GREETINGS, BIRTHDAY_GREETINGS
+from app.data.templates import (
+    TEMPLATES, AGE_GROUP_PROPOSAL_PRIORITIES, CLOSINGS,
+    BIRTHDAY_TEMPLATES, BIRTHDAY_CLOSINGS,
+)
 from app.data.proposals import PROPOSAL_MAP
 
 
@@ -176,4 +179,40 @@ def generate_message_with_metadata(
         "radicado": radicado,
         "mensaje": full_message,
         "propuesta": proposal.title,
+    }
+
+
+def generate_birthday_message(
+    primer_nombre: Optional[str],
+    segundo_nombre: Optional[str],
+    fecha_nacimiento: date,
+    sexo: Optional[str] = None,
+) -> dict:
+    """
+    Genera mensaje de cumpleaños personalizado por edad y género.
+    Solo felicitación + invitación a la página. Sin propuestas.
+    """
+    age = calculate_age(fecha_nacimiento)
+    group_key = get_age_group(age)
+    group_label = get_age_group_label(group_key)
+    nombre = build_name(primer_nombre, segundo_nombre, sexo)
+
+    greeting = random.choice(BIRTHDAY_GREETINGS[group_key])
+
+    template = random.choice(BIRTHDAY_TEMPLATES[group_key])
+    body = template.format(nombre=nombre, edad=age)
+
+    closing = random.choice(BIRTHDAY_CLOSINGS[group_key])
+    radicado = generate_radicado()
+
+    raw_message = f"{greeting} {body} {closing} Radicado: {radicado}"
+    full_message = apply_gender(raw_message, sexo)
+
+    return {
+        "nombre": nombre,
+        "edad_cumplida": age,
+        "grupo_edad": group_label,
+        "sexo": get_sexo_label(sexo),
+        "radicado": radicado,
+        "mensaje": full_message,
     }

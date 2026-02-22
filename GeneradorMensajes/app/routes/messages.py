@@ -5,14 +5,21 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from app.database import database
-from app.models.schemas import MessageItem, PaginatedResponse, StatsResponse
-from app.services.message_builder import generate_message, generate_message_with_metadata
+from app.models.schemas import MessageItem, PaginatedResponse, StatsResponse, BirthdayItem
+from app.services.message_builder import (
+    generate_message,
+    generate_message_with_metadata,
+    generate_birthday_message,
+)
 from app.services.query_builder import (
     build_messages_query,
     build_stats_query,
     build_gender_stats_query,
     build_region_stats_query,
     build_cross_stats_query,
+    build_birthday_query,
+    build_birthday_count_query,
+    build_birthday_stats_query,
 )
 
 router = APIRouter()
@@ -148,7 +155,7 @@ async def get_messages(
     cod_municipio: Optional[str] = Query(None, description="Filtrar por codigo de municipio"),
     edad_min: Optional[int] = Query(None, ge=18, description="Edad minima"),
     edad_max: Optional[int] = Query(None, le=120, description="Edad maxima"),
-    limit: int = Query(50, ge=1, le=500, description="Tamano de pagina"),
+    limit: int = Query(50, ge=1, le=500, description="Tamaño de página"),
     offset: int = Query(0, ge=0, description="Desplazamiento de pagina"),
 ):
     """
@@ -282,4 +289,184 @@ async def preview_message(
         "grupo_edad": group_label,
         "radicado": radicado,
         "mensaje": message,
+    }
+
+
+# =============================================
+# CUMPLEANOS: Cursor de cumpleaneros del dia
+# =============================================
+
+_birthday_cursor = {"offset": 0, "total": None, "fecha": None}
+
+
+def _reset_birthday_if_new_day():
+    """Reinicia el cursor automaticamente si cambio el dia."""
+    today = str(date.today())
+    if _birthday_cursor["fecha"] != today:
+        _birthday_cursor["offset"] = 0
+        _birthday_cursor["total"] = None
+        _birthday_cursor["fecha"] = today
+
+
+@router.get("/birthdays/next", tags=["Cumpleanos"])
+async def next_birthday():
+    """
+    Devuelve el SIGUIENTE cumpleanero de hoy con mensaje personalizado.
+    Cada llamada avanza al proximo registro. Cuando no hay mas,
+    indica que hoy no cumple mas gente.
+
+    El cursor se reinicia automaticamente al cambiar de dia.
+    """
+    _reset_birthday_if_new_day()
+
+    if _birthday_cursor["total"] is None:
+        _birthday_cursor["total"] = await database.fetch_val(
+            query=build_birthday_count_query()
+        )
+
+    total = _birthday_cursor["total"]
+    offset = _birthday_cursor["offset"]
+
+    # No hay cumpleaneros hoy
+    if total == 0:
+        return {
+            "status": "sin_cumpleaneros",
+            "fecha": str(date.today()),
+            "mensaje": "Hoy no cumple años nadie en la base de datos.",
+            "total_cumpleaneros": 0,
+        }
+
+    # Ya recorrimos todos
+    if offset >= total:
+        return {
+            "status": "completado",
+            "fecha": str(date.today()),
+            "mensaje": f"Hoy no cumple más gente! Ya se felicitaron los {total} cumpleañeros del día.",
+            "total_felicitados": total,
+            "posicion_actual": offset,
+        }
+
+    # Obtener el registro actual
+    row = await database.fetch_one(
+        query=build_birthday_query(), values={"offset": offset}
+    )
+
+    if row is None:
+        return {
+            "status": "sin_registro",
+            "posicion_actual": offset,
+            "total": total,
+        }
+
+    # Generar mensaje de cumpleanos personalizado
+    result = generate_birthday_message(
+        primer_nombre=row["primer_nombre"],
+        segundo_nombre=row["segundo_nombre"],
+        fecha_nacimiento=row["fecha_nacimiento"],
+        sexo=row["sexo"],
+    )
+
+    # Avanzar cursor
+    _birthday_cursor["offset"] = offset + 1
+
+    return {
+        "celular": row["celular"],
+        "mensaje": result["mensaje"],
+        "radicado": result["radicado"],
+        "metadata": {
+            "nombre": result["nombre"],
+            "edad_cumplida": result["edad_cumplida"],
+            "grupo_edad": result["grupo_edad"],
+            "sexo": result["sexo"],
+            "posicion": _birthday_cursor["offset"],
+            "total_cumpleaneros": total,
+            "restantes": total - _birthday_cursor["offset"],
+            "progreso_pct": round((_birthday_cursor["offset"] / total) * 100, 4),
+        },
+        "fecha": str(date.today()),
+    }
+
+
+@router.get("/birthdays/reset", tags=["Cumpleanos"])
+async def reset_birthday_cursor():
+    """Reinicia el cursor de cumpleanos al registro 0."""
+    _birthday_cursor["offset"] = 0
+    _birthday_cursor["total"] = None
+    _birthday_cursor["fecha"] = str(date.today())
+    return {"status": "reiniciado", "posicion_actual": 0, "fecha": str(date.today())}
+
+
+@router.get("/birthdays/status", tags=["Cumpleanos"])
+async def birthday_cursor_status():
+    """Estado actual del cursor de cumpleanos sin avanzar."""
+    _reset_birthday_if_new_day()
+
+    if _birthday_cursor["total"] is None:
+        _birthday_cursor["total"] = await database.fetch_val(
+            query=build_birthday_count_query()
+        )
+
+    total = _birthday_cursor["total"]
+    offset = _birthday_cursor["offset"]
+    return {
+        "fecha": str(date.today()),
+        "posicion_actual": offset,
+        "total_cumpleaneros": total,
+        "restantes": total - offset,
+        "progreso_pct": round((offset / total) * 100, 4) if total > 0 else 0,
+        "completado": offset >= total,
+    }
+
+
+@router.get("/birthdays/stats", tags=["Cumpleanos"])
+async def birthday_stats():
+    """
+    Estadisticas de cumpleaneros de HOY:
+    - Total de cumpleaneros
+    - Desglose por grupo de edad y genero
+    """
+    count_query = build_birthday_count_query()
+    stats_query = build_birthday_stats_query()
+
+    total, rows = await asyncio.gather(
+        database.fetch_val(query=count_query),
+        database.fetch_all(query=stats_query),
+    )
+
+    # Cruce edad x genero
+    por_grupo = {}
+    for row in rows:
+        grupo = row["grupo_edad"]
+        genero = row["genero"]
+        if grupo not in por_grupo:
+            por_grupo[grupo] = {}
+        por_grupo[grupo][genero] = row["total"]
+
+    return {
+        "fecha": str(date.today()),
+        "total_cumpleaneros": total,
+        "por_grupo_edad_y_genero": por_grupo,
+    }
+
+
+@router.get("/birthdays/preview", tags=["Cumpleanos"])
+async def preview_birthday(
+    nombre: str = Query("Maria", description="Nombre para el preview"),
+    edad: int = Query(30, ge=18, le=120, description="Edad que cumple"),
+    sexo: str = Query("F", description="Sexo (M/F)"),
+):
+    """
+    Preview de un mensaje de cumpleanos sin consultar la BD.
+    Permite probar la personalizacion por genero y edad.
+    """
+    fake_dob = date.today().replace(year=date.today().year - edad)
+    result = generate_birthday_message(
+        primer_nombre=nombre,
+        segundo_nombre=None,
+        fecha_nacimiento=fake_dob,
+        sexo=sexo,
+    )
+    return {
+        "fecha": str(date.today()),
+        **result,
     }

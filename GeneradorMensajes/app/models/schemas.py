@@ -24,3 +24,13 @@ class StatsResponse(BaseModel):
     por_genero: dict
     por_departamento: dict
     cruce_edad_genero: dict
+
+
+class BirthdayItem(BaseModel):
+    celular: str
+    nombre: str
+    edad_cumplida: int
+    grupo_edad: str
+    sexo: str
+    radicado: str
+    mensaje: str

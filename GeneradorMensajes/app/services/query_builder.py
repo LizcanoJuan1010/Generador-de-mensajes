@@ -194,3 +194,61 @@ def build_cross_stats_query(
         ORDER BY 1, 2
     """
     return query, params
+
+
+def build_birthday_query() -> str:
+    """
+    Query para cursor de cumpleaneros de HOY.
+    Retorna 1 registro a la vez con LIMIT 1 OFFSET :offset.
+    """
+    return """
+        SELECT
+            empleado_id, celular,
+            primer_nombre, segundo_nombre,
+            sexo, fecha_nacimiento
+        FROM empleados_empresas
+        WHERE EXTRACT(MONTH FROM fecha_nacimiento) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(DAY FROM fecha_nacimiento) = EXTRACT(DAY FROM CURRENT_DATE)
+          AND celular IS NOT NULL AND celular != ''
+          AND fecha_nacimiento IS NOT NULL
+        ORDER BY empleado_id ASC
+        LIMIT 1 OFFSET :offset
+    """
+
+
+def build_birthday_count_query() -> str:
+    """Cuenta total de cumpleaneros de HOY."""
+    return """
+        SELECT COUNT(*) FROM empleados_empresas
+        WHERE EXTRACT(MONTH FROM fecha_nacimiento) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(DAY FROM fecha_nacimiento) = EXTRACT(DAY FROM CURRENT_DATE)
+          AND celular IS NOT NULL AND celular != ''
+          AND fecha_nacimiento IS NOT NULL
+    """
+
+
+def build_birthday_stats_query() -> str:
+    """Stats de cumpleaneros de hoy por grupo de edad y genero."""
+    return """
+        SELECT
+            CASE
+                WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 18 AND 25 THEN '18-25'
+                WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 26 AND 35 THEN '26-35'
+                WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 36 AND 50 THEN '36-50'
+                WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) > 50 THEN '51+'
+                ELSE 'Otro'
+            END AS grupo_edad,
+            CASE
+                WHEN sexo = 'F' THEN 'Femenino'
+                WHEN sexo = 'M' THEN 'Masculino'
+                ELSE 'No registrado'
+            END AS genero,
+            COUNT(*) AS total
+        FROM empleados_empresas
+        WHERE EXTRACT(MONTH FROM fecha_nacimiento) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(DAY FROM fecha_nacimiento) = EXTRACT(DAY FROM CURRENT_DATE)
+          AND celular IS NOT NULL AND celular != ''
+          AND fecha_nacimiento IS NOT NULL
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+    """
