@@ -1,6 +1,3 @@
-# Dashboard tiene su propio repo
-Dashboard/
-
 # Env con secrets
 .env
 
