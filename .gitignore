@@ -1,11 +1,17 @@
+# Dashboard tiene su propio repo
+Dashboard/
+
+# Env con secrets
+.env
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.env
-.venv/
-venv/
-*.egg-info/
-dist/
-build/
+
+# Audio ejemplos
+*.mp3
+
+# IDEs
 .idea/
 .vscode/

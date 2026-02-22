@@ -1,0 +1,22 @@
+services:
+  generador-audios:
+    build: .
+    ports:
+      - "8007:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=postgres
+      - ELEVENLABS_VOICE_ID=khCM2Rg480UVco4Rqvdr
+      - ELEVENLABS_MODEL=eleven_multilingual_v2
+    env_file:
+      - ../.env
+    networks:
+      - dashboard_default
+    restart: unless-stopped
+
+networks:
+  dashboard_default:
+    external: true
